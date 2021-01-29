@@ -21,12 +21,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ['SECRET_KEY_WISECITY']
-
+local_launch = os.environ['local_launch']
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# DEBUG = True
+DEBUG = False
+if local_launch:
+    DEBUG = True
 
-ALLOWED_HOSTS = []
+
+ALLOWED_HOSTS = ['wisecity.herokuapp.com',
+                 '127.0.0.1',
+                 '192.168.0.3',
+                 'localhost',
+                 # '0.0.0.0',
+                 ]
 
 
 # Application definition
