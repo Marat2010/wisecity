@@ -140,18 +140,24 @@ def get_readable_data(channel_data: tuple) -> float:
 
     # list_bytes = [(bin(i)[2:]).rjust(8, '0') for i in channel_data]
     list_bytes = [(bin(i)[2:]).rjust(8, '0') for i in reversed(channel_data)]
-    # bits = ''.join(list_bytes)
-    bits = ''.join(list_bytes)[::-1]
+    bits = ''.join(list_bytes)
+    # bits = ''.join(list_bytes)[::-1]
 
     print(f'==== 2-ый: {list_bytes}, склеинные биты: {bits}', len(bits))
 
     # exp_E = bits[23:30]
 
     # exp_E = int(bits[23:31], 2)
-    exp_E = int(bits[23:31][::-1], 2)
+    # exp_E = int(bits[23:31][::-1], 2)
+    exp_E = int(bits[1:9], 2)
 
-    mantissa_M = int(bits[:23], 2)
-    value = ((-1) ** int(bits[31])) * 2**(exp_E-127) * (1 + mantissa_M / 2**23)
+    mantissa_M = int(bits[9:], 2)
+    value = ((-1) ** int(bits[0])) * 2**(exp_E-127) * (1 + mantissa_M / 2**23)
+
+    if value < 1e-38 or value > 1e+38:  # отсечь -6.805646...e+38 => -∞ (0xff...) и 7.1333939...e-39 => 0 (0x00 ...)
+        value = 0.0
+
+    value = round(value, 3)
     print(f'==VALUE: {value}')
 
     # print(f'==== 2-ый склеинный: {"".join(res)}, обратный порядок: {"".join(tuple(reversed(res)))}')
