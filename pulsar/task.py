@@ -23,6 +23,8 @@
 Результатом выполнения задачи должна быть функция, которая принимает на вход байтовую последовательность ответа счетчика, и возвращает значения текущих показаний счетчика в человеко-читаемом виде.
 '''
 
+import json
+
 
 request_bytes = bytearray([0x02, 0x27, 0x21, 0x35, 0x01, 0x0e, 0xfc, 0x3f, 0x08, 0x00, 0xba, 0x1c, 0x49, 0x73])
 response_bytes = bytearray([
@@ -55,7 +57,7 @@ response_bytes = bytearray([
 """
 
 
-def package_split(package: bytearray) -> dict:  # разбиение пакета
+def package_split(package: bytearray) -> dict:  # Разбиение пакета
     addr = package[:4]  # ADDR - cетевой адрес устройства (4байта) в формате BCD, старшим байтом вперёд
     code_F = package[4]  # F - код функции запроса (1 байт);
     len_L = package[5]  # L - общая длина пакета (1 байт);
@@ -65,7 +67,8 @@ def package_split(package: bytearray) -> dict:  # разбиение пакет�
     return {'ADDR': addr, 'F': code_F, 'L': len_L, 'CRC16': crc16, 'ID': request_ID, 'DATA': data}
 
 
-def get_channel_name(channel_number) -> str:
+def get_channel_name(channel_number: int) -> str:
+    """ Получение имени канала по номеру """
     ch_name = {3: 'temperatureFlow',  # Температура под. [°C]
                4: 'temperatureReturn',  # Температура обр. [°C]
                5: 'temperatureDiff',  # Перепад температур, [°C]
@@ -83,16 +86,15 @@ def get_channel_name(channel_number) -> str:
     return ch_name[channel_number]
 
 
-def request_mask_parse(mask: bytearray) -> tuple:
+def parsing_request_mask(mask: bytearray) -> tuple:
     """ Парсинг маски каналов в запросе, полчуение списка (кортежа) номеров канала
         IN: mask, type(mask) => bytearray(b'\xfc?\x08\x00') <class 'bytearray'>
+                    (fc 3f 08 00) => [252, 63, 8, 0] => [0, 8, 63, 252]
         => mask_bin => ['00000000', '00001000', '00111111', '11111100']
         => '00000000000010000011111111111100' => чтение с конца - mask_bin[::-1]
         OUT: => (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 20)
     """
-
     mask_bin = [(bin(i)[2:]).rjust(8, '0') for i in reversed(mask)]
-    # mask_bin => ['00000000', '00001000', '00111111', '11111100']
     mask_bin = ''.join(mask_bin)  # => '00000000000010000011111111111100'
     ch_list = []  # список каналов, будем добавлять номера в них
     [ch_list.append(_ + 1) for _, bit_val in enumerate(mask_bin[::-1]) if bit_val == '1']
@@ -101,109 +103,133 @@ def request_mask_parse(mask: bytearray) -> tuple:
 
 
 def data_split(data_bytes: bytearray) -> tuple:
-    """ Разбиение данных для каждого параметра (по 4 байта для канала) """
+    """ Разбиение данных "DATA" для каждого параметра (по 4 байта для канала) """
     values = []
-    # values_h = []
-    # values_b = []
 
-    number_of_value = int(len(data_bytes)/4)  # Кол-во параметров значений (1 значение => 4 байта)
-    print(f' --- Кол-во параметров значений: {number_of_value}')
-    for i in range(1, number_of_value+1, 1):
-        values.append(tuple(data_bytes[i*4-4:i*4]))  # => (149, 19, 97, 66)
-    print(f' --- Кортеж параметров : {values}')
-
-    #     # ----- Временно для просмотра в разнох форматах ----
-    #     val_h = (hex(b) for b in data_bytes[(4*i-4):(4*i)])  # => ('0x95', '0x13', '0x61', '0x42')
-    #     values_h.append(tuple(val_h))
-    #
-    #     val_b = bytearray(b for b in data_bytes[(4*i-4):(4*i)])  # => bytearray(b'\x95\x13aB')'
-    #     values_b.append(val_b)
-    #
-    # print(f"-- Value в 16-ричном: {values_h}")
-    # print(f"-- Value в byte: {values_b}")
+    number_of_value = int(len(data_bytes)/4)  # Кол-во параметров(каналов) значений (одно значение = 4 байта)
+    for i in range(1, number_of_value+1, 1):  # Берем сразу по 4 байта [0:4], [4:8] [8:12] ...
+        values.append(tuple(data_bytes[i*4-4:i*4]))  # => [(149, 19, 97, 66), ... ]
 
     return tuple(values)
 
 
-def check_package(package) -> bool:
-    """ Проверка пакета на соответствие кол-ва байт """
+def check_package(package: dict) -> bool:
+    """ Проверка пакета на соответствие кол-ва байт.
+    Кол-во байтов в параметре "L" и фактическая длина пакетов данных в "DATA".
+     Проверка что данные по 4 байта (кратность 4) """
     if int(package['L'])-10 != int(len(package['DATA'])) or\
-            int(len(package['DATA'])) % 4 != 0:  # сверка кол-ва байт
-        print(f"Кол-во байтов в L (L-10): {int(package['L']) - 10}, в самих даннных: {int(len(package['DATA']))}")
+            int(len(package['DATA'])) % 4 != 0:                  # сверка кол-ва байт
         raise ValueError('!!! Не верное кол-во байтов в данных!!!')
     return True
 
 
 def get_readable_data(channel_data: tuple) -> float:
-    # value = ''
-    print(f'==== 16h: {channel_data}, обратный порядок: {tuple(reversed(channel_data))}')
+    """ Получает кортеж их 4-х байт, возвращает значение показания счетчика в человеко-читаемом виде.
+    Формула вычисления взята отсюда: https://www.softelectro.ru/ieee754.html .
+        Чтобы записать число в стандарте IEEE 754 или восстановить его, необходимо знать три параметра:
+            S- бит знака (31-й бит)
+            E- смещенная экспонента (30-23 биты)
+            M - остаток от мантиссы (22-0 биты) """
 
-    # list_bytes = [(bin(i)[2:]).rjust(8, '0') for i in channel_data]
     list_bytes = [(bin(i)[2:]).rjust(8, '0') for i in reversed(channel_data)]
-    bits = ''.join(list_bytes)
-    # bits = ''.join(list_bytes)[::-1]
+    # переводим в двоичный формат младшим байтом вперёд
+    # (149, 19, 97, 66) => list_bytes = ['01000010', '01100001', '00010011', '10010101']
 
-    print(f'==== 2-ый: {list_bytes}, склеинные биты: {bits}', len(bits))
+    bits = ''.join(list_bytes)  # => 01000010011000010001001110010101
 
-    # exp_E = bits[23:30]
+    sign_bit_S = int(bits[0])  # бит знака (31-й бит => 0 бит). => "=0"
+    exp_E = int(bits[1:9], 2)  # Смещенная экспонента E (30-23 биты => 1-8 биты). => "=132"
+    mantissa_M = int(bits[9:], 2)  # Остаток от мантиссы M (22-0 биты => 9-30 биты). => "=6362005"
 
-    # exp_E = int(bits[23:31], 2)
-    # exp_E = int(bits[23:31][::-1], 2)
-    exp_E = int(bits[1:9], 2)
+    value = ((-1) ** sign_bit_S) * 2**(exp_E - 127) * (1 + mantissa_M / 2**23)  # формула расчета
 
-    mantissa_M = int(bits[9:], 2)
-    value = ((-1) ** int(bits[0])) * 2**(exp_E-127) * (1 + mantissa_M / 2**23)
-
-    if value < 1e-38 or value > 1e+38:  # отсечь -6.805646...e+38 => -∞ (0xff...) и 7.1333939...e-39 => 0 (0x00 ...)
+    if value < 1e-38 or value > 1e+38:  # Отсечь -6.805646...e+38 => -∞ (0xff, ...) и 7.1333939...e-39 => 0 (0x00,  ...)
         value = 0.0
-
     value = round(value, 3)
-    print(f'==VALUE: {value}')
-
-    # print(f'==== 2-ый склеинный: {"".join(res)}, обратный порядок: {"".join(tuple(reversed(res)))}')
-
-    # res = []
-    # for b in channel_data:   # [::-1]
-    #     res.append((bin(b)[2:]).rjust(8, '0'))
-    # value = []  # список каналов, будем добавлять номера в них
-    # [value.append(_ + 1) for _, bit_val in enumerate(mask_bin[::-1]) if bit_val == '1']
-
     return value
 
 
 def parse_response(response: bytearray) -> dict:
     """Ваша реализация здесь"""
-    package = package_split(response_bytes)  # разбиение пакета ОТВЕТА (response)
-    print(f' === Пакет ответа: {package} \n\t === Длина пакета: {len(package)}')
+    request_package = package_split(request_bytes)  # Распаковка пакета ЗАПРОСА (request) для получение маски
+    channels = parsing_request_mask(request_package['DATA'])  # Получение кортежа номеров каналов из пакета запроса
 
-    data = package_split(request_bytes)  # Распаковка пакета ЗАПРОСА (request) для получение маски
-    channels = request_mask_parse(data['DATA'])  # Получение кортежа каналов из пакета запроса
-    print(f'=== Номера каналов: {channels}')
+    package = package_split(response)  # Распаковка пакета ОТВЕТА (response)
 
-    check_package(package)  # Проверка пакета на соответствие кол-ва байт, иначе "raise ValueError"
-    channels_data = data_split(package['DATA'])  # Разбиение данных для каждого параметра (по 4 байта для канала)
+    check_package(package)  # Проверка в пакете кол-ва байт данных, иначе "raise ValueError"
+    # функцию "check_package" необходимо расширить для проверки адресов "ADDR", кода функции "F" в двух
+    # пакетах (request, response), вычисление CRC16.
 
-    channels_values = []
-    for _ in channels_data:
-        channels_values.append(get_readable_data(_))
+    channels_data = data_split(package['DATA'])  # Разбиение данных "DATA" для каждого параметра (4 байта на канал)
 
-    z1 = tuple(zip(channels, channels_data))  # => ((3, (149, 19, 97, 66)), (4, (195, 91, 54, 66)), ....)
-    print(f"=== ZIP: {tuple(z1)}")
-    result = {}
-    for i, ch in enumerate(z1):
-        print(f"==Канал: {ch[0]:2} : {get_channel_name(ch[0]):20} = {channels_values[i]} => {ch[1]}")
-        # result[get_channel_name(ch[0])] = ch[1]
-        result[get_channel_name(ch[0])] = channels_values[i]
+    channels_values = []  # список показаний счетчика в человеко-читаемом виде
+    [channels_values.append(get_readable_data(_)) for _ in channels_data]  # => [56.269, 45.59, 10.68, ..., 0.0]
 
-    print(f"=== data_out: {channels_data}")
+    number_value = tuple(zip(channels, channels_values))  # кортеж (номер канала-значение) => ((3, 56.269)... (20, 0.0))
+
+    sensorId = ''.join([hex(_)[2:] for _ in package['ADDR']])  # адрес устройства (4байта) в формате BCD
+    result = {'sensorId': sensorId}  # Результируюший словарь
+
+    for i, ch in enumerate(number_value):  # Добавление в словарь значений каналов
+        result[get_channel_name(ch[0])] = channels_values[i]  # по ключу (номер канала) вытаскиваем имя канала
+
     return result
 
 
 # ------------- результат -----------------------------
-# --------- Обработка данных (ОСНОВНОЙ БЛОК)--------------------------------
-request = parse_response(response_bytes)
-print(f'***** РЕЗУЛЬТАТ **** Данные:\n {request}')
+if __name__ == '__main__':
+    request = parse_response(response_bytes)
+    print(f'***** РЕЗУЛЬТАТ **** :')
+    print(json.dumps(request, indent=4, sort_keys=True))
 
+
+# -------------------------------------------------------------
+    # import pprint
+    # pprint.pprint(request)
+# -------------------
+# mask_bin => ['00000000', '00001000', '00111111', '11111100']
+#     # ----- Временно для просмотра в разнох форматах ----
+# values_h = []
+# values_b = []
+#     val_h = (hex(b) for b in data_bytes[(4*i-4):(4*i)])  # => ('0x95', '0x13', '0x61', '0x42')
+#     values_h.append(tuple(val_h))
+#
+#     val_b = bytearray(b for b in data_bytes[(4*i-4):(4*i)])  # => bytearray(b'\x95\x13aB')'
+#     values_b.append(val_b)
+#
+# print(f"-- Value в 16-ричном: {values_h}")
+# print(f"-- Value в byte: {values_b}")
+# value = ''
+# list_bytes = [(bin(i)[2:]).rjust(8, '0') for i in channel_data]
+# bits = ''.join(list_bytes)[::-1]
+# print(f'==== 16h: {channel_data}, обратный порядок: {tuple(reversed(channel_data))}')
+# print(f'==== 2-ый: {list_bytes}, склеинные биты: {bits}', len(bits))
+
+# exp_E = bits[23:30]
+# exp_E = int(bits[23:31], 2)
+# exp_E = int(bits[23:31][::-1], 2)
+
+# print(f'==== 2-ый склеинный: {"".join(res)}, обратный порядок: {"".join(tuple(reversed(res)))}')
+
+# res = []
+# for b in channel_data:   # [::-1]
+#     res.append((bin(b)[2:]).rjust(8, '0'))
+# value = []  # список каналов, будем добавлять номера в них
+# [value.append(_ + 1) for _, bit_val in enumerate(mask_bin[::-1]) if bit_val == '1']
+# print(f'==VALUE: {value}')
+# print(f"Кол-во байтов в L (L-10): {int(package['L']) - 10}, в самих даннных: {int(len(package['DATA']))}")
+
+# print(f' --- Кол-во параметров значений: {number_of_value}')
+# print(f' --- Кортеж параметров : {values}')
+# print(f' === Пакет ответа: {package} \n\t === Длина пакета: {len(package)}')
+# print(f'=== Номера каналов: {channels}')
+# for _ in channels_data:
+#     channels_values.append(get_readable_data(_))
+# print(f"=== ZIP: {tuple(z1)}")
+# print(f'==Cетевой адрес: {sensorId}')
+# print(f"==Канал: {ch[0]:2} : {get_channel_name(ch[0]):20} = {channels_values[i]} => {ch[1]}")
+
+# --------------------------------------------------------
 
 # # ---------------- получение десятичных данных ------------------
 # print(' ---------------- получение десятичных данных ------------------')
