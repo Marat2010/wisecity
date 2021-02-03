@@ -7,19 +7,41 @@
 </head>
 <body>
     <h1>Test for Wise City Pulsar</h1>
-    <h2>Парсинг ответа от счетчика.</h2>
+    <h2>Парсинг ответа от счетчика.</h2>    <hr>
     <h3>Введите байтоваю последовательность:</h3>
-    <p>через запятую в таком ввиде: 0x02, 0x27, 0x21, 0x35, ..., 0x1c, 0x57, 0xd2</p>
-    <br><hr><br>
     <form action="{% url 'pulsar' %}" method="post">
         {% csrf_token %}
-        {{ form }}
-        <input type="submit" value="Submit" />
-        <br><br><br>
-        <h3>Результат:</h3>
-        {% for key, value in result.items %}
-            <p>{{ key }} &nbsp = &nbsp {{ value }}</p>
+
+        {% for value in form %}
+            <p>{{ value.label }}: </p>
+            <p>{{ value }} </p>
         {% endfor %}
+
+        <input type="submit" value="Submit" />
+        <br>
+        <h3>Результат:</h3>
+        {% if data_error %}
+            <h3> !!! Не верные данные!!!</h3>
+            <p> Возможно: <br>
+               - Вводите данные не в 16-ом формате. <br>
+               - Не совпадает кол-во байтов в параметре "L" и фактическая <br>
+                длина пакета или данные не по 4 байта (нет кратности 4-м). <br> . . .
+            </p>
+        {% else %}
+            {% for key, value in result.items %}
+                <p>{{ key }} &nbsp = &nbsp {{ value }}</p>
+            {% endfor %}
+        {% endif %}
+
     </form>
 </body>
 </html>
+
+{#------------------------------------------#}
+{#        {{ form }}#}
+{#        <p> {{ form.request_bytes.label }}: </p>#}
+{#        <p>По умоланию:</p>#}
+{#        <p>0x02, 0x27, 0x21, 0x35, 0x01, 0x0e, 0xfc,<br> 0x3f, 0x08, 0x00, 0xba, 0x1c, 0x49, 0x73</p>#}
+{#        <p>{{ form.request_bytes }}</p>#}
+{#        <p> {{ form.response_bytes.label }}: </p>#}
+{#        <p>{{ form.response_bytes }}</p>#}
