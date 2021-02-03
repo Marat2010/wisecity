@@ -7,14 +7,19 @@
 </head>
 <body>
     <h1>Test for Wise City Pulsar</h1>
+    <h2>Парсинг ответа от счетчика.</h2>
     <h3>Введите байтоваю последовательность:</h3>
-
-<form action="{% url 'pulsar' %}" method="post">
-    {% csrf_token %}
-    {{ form }}
-    <input type="submit" value="Submit" />
-</form>
-
-
+    <p>через запятую в таком ввиде: 0x02, 0x27, 0x21, 0x35, ..., 0x1c, 0x57, 0xd2</p>
+    <br><hr><br>
+    <form action="{% url 'pulsar' %}" method="post">
+        {% csrf_token %}
+        {{ form }}
+        <input type="submit" value="Submit" />
+        <br><br><br>
+        <h3>Результат:</h3>
+        {% for key, value in result.items %}
+            <p>{{ key }} &nbsp = &nbsp {{ value }}</p>
+        {% endfor %}
+    </form>
 </body>
 </html>
